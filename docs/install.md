@@ -1,109 +1,126 @@
-# Install
+# Install (Nix flake — home-manager)
 
-Personal-first install — the paths below assume ZaneyOS + Hyprland + waybar-jwt-transparent, but everything is portable.
+The reproducible path. `claude-code-waybar` is a home-manager flake, so everything (scripts, hooks, tmux config, hyprland binds, waybar wiring) is installed declaratively. Updates flow via `nix flake update`.
 
-## 1. Dependencies
-
-The three packages that are typically missing on a stock ZaneyOS install — add these to `host-packages.nix`:
+## 1. Add the input to your flake
 
 ```nix
-environment.systemPackages = with pkgs; [
-  tmux       # host Claude Code sessions for send-keys accept/reject
-  libnotify  # notify-send used by all scripts
-];
+# flake.nix
+inputs.claude-waybar = {
+  url = "github:YUVARAJ-R-ai/claude-code-waybar";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
 ```
 
-**Note on rofi:** the wifi picker needs `rofi`, but on most Hyprland setups (including ZaneyOS) it's already installed as part of the bar/launcher stack. Check with `command -v rofi` before adding it. If you *do* need to add it, use `rofi` — **not** `rofi-wayland`. The `-wayland` variant was removed from nixpkgs (upstream merge); referencing it produces `error: 'rofi-wayland' has been merged into 'rofi'` during `nh os switch`.
+If your flake doesn't already pass `inputs` down to home-manager, ensure it does — e.g. via `home-manager.extraSpecialArgs = { inherit inputs; }` in your nixosSystem, or by referencing `inputs.claude-waybar` from a NixOS module whose `specialArgs` already include `inputs` (the ZaneyOS default).
 
-Then `nh os switch`.
+## 2. Import the module in your home-manager config
 
-**Note on tmux:** ZaneyOS's `variables.nix` has `tmuxEnable = false` by default — that flag only skips ZaneyOS's bundled tmux *config*, not the binary. Adding `tmux` to `host-packages.nix` as above is the right path.
+```nix
+# somewhere inside home-manager.users.<you> = { ... }: { ... }
+imports = [ inputs.claude-waybar.homeManagerModules.default ];
 
-Already present in the standard ZaneyOS + Hyprland stack (verify with `command -v <name>` if unsure): `rofi`, `jq`, `wl-clipboard`, `wl-clip-persist`, `grim`, `slurp`, `nmcli` (NetworkManager), `kitty`, `claude`.
-
-## 2. Clone
-
-```bash
-git clone https://github.com/<you>/claude-code-waybar ~/.config/claude-waybar
+programs.claudeWaybar = {
+  enable = true;
+  wifi.enable = true;             # rofi-based wifi picker (default: true)
+  registerClaudeHooks = true;     # deep-merge Notification/Stop hooks into ~/.claude/settings.json (default: true)
+};
 ```
 
-## 3. Put the scripts on $PATH
+That gets you:
+- `claude-waybar-session`, `claude-waybar-pending`, `claude-waybar-accept`, `claude-waybar-clip-img`, `rofi-wifi-menu` all on PATH
+- `tmux` configured with `allow-passthrough on` (image paste survives tmux) + 50k scrollback
+- Hyprland keybinds (`Super+C`, `Super+N`, `Super+Shift+A/X`, `Super+Ctrl+F`, `Super+Shift+V/P`)
+- Claude Code hooks registered non-destructively (jq deep-merge preserves your other settings.json keys)
 
-```bash
-mkdir -p ~/.local/bin
-for s in ~/.config/claude-waybar/scripts/claude-waybar-*; do
-  ln -sf "$s" ~/.local/bin/
-done
-chmod +x ~/.config/claude-waybar/scripts/claude-waybar-* ~/.config/claude-waybar/hooks/*.sh
-```
+## 3. Wire the waybar module into your theme
 
-Ensure `~/.local/bin` is on `$PATH`.
+The module handles everything **except** waybar rendering — because your waybar theme is opinionated (module order, styling), we don't want to fight it. Add three lines to your theme file:
 
-## 4. Register the Claude Code hooks
+```nix
+# your-waybar-theme.nix
+{ pkgs, inputs, ... }:
+let cw = inputs.claude-waybar.lib.waybarSnippet;
+in {
+  programs.waybar.settings = [
+    ({
+      layer = "top";
+      # ... your existing settings ...
+      modules-right = [
+        "custom/claude"    # NEW — add wherever you want it in the bar
+        "network"          # NEW — same
+        # ... your existing modules-right ...
+      ];
+      # ... your existing module configs ...
+    } // cw.modules)   # ← merges "custom/claude" + "network" module definitions
+  ];
 
-Edit `~/.claude/settings.json` (create if missing):
-
-```json
-{
-  "hooks": {
-    "Notification": [
-      { "hooks": [ { "type": "command", "command": "~/.config/claude-waybar/hooks/notification.sh" } ] }
-    ],
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "~/.config/claude-waybar/hooks/stop.sh" } ] }
-    ]
-  }
+  programs.waybar.style = ''
+    /* ... your existing CSS ... */
+    ${cw.style}          # ← appends claude-waybar + network styling
+  '';
 }
 ```
 
-## 5. Wire tmux
+Then rebuild:
 
-Add to `~/.tmux.conf`:
-
-```tmux
-source-file ~/.config/claude-waybar/tmux/claude.conf
+```bash
+sudo nixos-rebuild switch --flake .#<host>
+# or, if you use nh:
+nh os switch
 ```
 
-## 6. Wire waybar
+Reload waybar and hyprland to pick up the new config immediately:
 
-- Copy the objects in `waybar/module.jsonc` into your waybar config JSON (merge into the `modules` map — brings both `custom/claude` and `network`).
-- Add `"custom/claude"` and `"network"` into one of the `modules-left` / `modules-center` / `modules-right` arrays.
-- Append the contents of `waybar/style.css` to your waybar style.css (or `@import` it).
-- Reload: `killall -SIGUSR2 waybar`.
-
-## 6b. Wifi picker (optional but bundled)
-
-The `network` module points `on-click` at `~/.local/bin/rofi-wifi-menu` (installed in step 3). Also bind `Super+N` — the hypr snippet in step 7 does this.
-
-- Left-click on the network module → rofi popup with nearby SSIDs, click to connect.
-- Right-click → falls back to `nmtui` in kitty (for VPN, wired, or edge cases the rofi picker doesn't cover).
-
-## 7. Wire Hyprland
-
-In `~/.config/hypr/hyprland.conf`:
-
-```conf
-source = ~/.config/claude-waybar/hypr/keybinds.conf
+```bash
+killall -SIGUSR2 waybar
+hyprctl reload
 ```
 
-Then `hyprctl reload`.
-
-## 8. Try it
+## 4. Try it
 
 ```bash
 cd ~/some-project
-claude-waybar-session            # opens a tmux-hosted Claude in this project
+claude-waybar-session       # spawns tmux session claude-<project> with `claude` inside
 ```
 
-Ask Claude to run a Bash command it doesn't have pre-approved. The waybar module should light up. Left-click on the module → prompt approved from the bar.
+Ask Claude to run an un-preapproved shell command. Your waybar module lights up as `⏸ 1` within a second — left-click to accept, right-click to reject, middle-click to focus the terminal.
+
+## Updates
+
+```bash
+nix flake update claude-waybar
+nh os switch
+```
 
 ## Uninstall
 
-```bash
-rm ~/.local/bin/claude-waybar-*
-# Remove the hook block from ~/.claude/settings.json
-# Remove the source line from ~/.tmux.conf and ~/.config/hypr/hyprland.conf
-# Remove custom/claude from waybar config, killall -SIGUSR2 waybar
-rm -rf ~/.config/claude-waybar
-rm -rf ~/.local/state/claude-waybar
+Flip the enable flag off:
+
+```nix
+programs.claudeWaybar.enable = false;
 ```
+
+Then `nh os switch`. All packages, xdg files, tmux/hyprland extraConfig, and the ~/.claude/settings.json hook block get cleanly removed (the last requires re-running `nh os switch` once after disabling — HM's activation script rewrites settings.json without our hooks). Remove the waybar snippet paste from your theme manually.
+
+## Requirements the module doesn't install for you
+
+- **kitty** (or another terminal that speaks the kitty graphics protocol) — for image paste inside Claude Code.
+- **grim + slurp** — for `Super+Shift+P` region-screenshot binding.
+- **`claude`** binary on PATH — Claude Code itself.
+- **Hyprland + waybar** — obviously.
+- **NetworkManager** — if you use the wifi picker.
+
+Most of these are already present on any Hyprland Wayland setup.
+
+## Keybind cheat sheet
+
+| Binding | Action |
+| --- | --- |
+| `Super + C` | Launch/attach Claude session in `$PWD` |
+| `Super + N` | Wifi picker (rofi) |
+| `Super + Shift + V` | Clipboard image → path (for pasting to Claude) |
+| `Super + Shift + P` | Region screenshot → path |
+| `Super + Shift + A` | Accept oldest pending prompt |
+| `Super + Shift + X` | Reject oldest pending prompt |
+| `Super + Ctrl + F` | Focus terminal of oldest pending session |

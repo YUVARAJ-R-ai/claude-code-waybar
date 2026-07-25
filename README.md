@@ -43,26 +43,59 @@ Decouple the **approval UI** from the **execution surface**:
 | grim + slurp | *Optional* — needed for the region-screenshot binding. |
 | rofi + NetworkManager (`nmcli`) | *Optional* — needed for the bundled wifi picker. |
 
-## Install
+## Install — NixOS + home-manager (recommended, fully reproducible)
 
-Full walkthrough in [`docs/install.md`](docs/install.md). Short version:
+Add the flake input:
 
-```bash
-git clone https://github.com/<you>/claude-code-waybar ~/.config/claude-waybar
-mkdir -p ~/.local/bin
-ln -sf ~/.config/claude-waybar/scripts/claude-waybar-* ~/.local/bin/
-ln -sf ~/.config/claude-waybar/scripts/rofi-wifi-menu   ~/.local/bin/
-chmod +x ~/.config/claude-waybar/scripts/* ~/.config/claude-waybar/hooks/*.sh
+```nix
+inputs.claude-waybar = {
+  url = "github:YUVARAJ-R-ai/claude-code-waybar";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
 ```
 
-Then wire four things:
+Import the module in your home-manager config and toggle on:
 
-1. **Claude Code hooks** — add the block from [`docs/install.md#4`](docs/install.md) to `~/.claude/settings.json`.
-2. **tmux** — `source-file ~/.config/claude-waybar/tmux/claude.conf` in `~/.tmux.conf`.
-3. **waybar** — paste [`waybar/module.jsonc`](waybar/module.jsonc) into your waybar config, append [`waybar/style.css`](waybar/style.css) to your stylesheet, then `killall -SIGUSR2 waybar`.
-4. **Hyprland** — `source = ~/.config/claude-waybar/hypr/keybinds.conf` in `~/.config/hypr/hyprland.conf`, then `hyprctl reload`.
+```nix
+imports = [ inputs.claude-waybar.homeManagerModules.default ];
 
-A NixOS/home-manager flake for one-line install is on the roadmap.
+programs.claudeWaybar = {
+  enable = true;
+  wifi.enable = true;
+};
+```
+
+Wire the waybar snippet into your waybar theme (three lines):
+
+```nix
+{ pkgs, inputs, ... }:
+let cw = inputs.claude-waybar.lib.waybarSnippet;
+in {
+  programs.waybar.settings = [
+    ({
+      modules-right = [ "custom/claude" "network" /* ... */ ];
+      # ... your existing settings ...
+    } // cw.modules)
+  ];
+  programs.waybar.style = ''
+    /* ... your CSS ... */
+    ${cw.style}
+  '';
+}
+```
+
+Then `nh os switch` (or `sudo nixos-rebuild switch`). Full walkthrough in [`docs/install.md`](docs/install.md).
+
+### Updates
+
+```bash
+nix flake update claude-waybar
+nh os switch
+```
+
+### Non-Nix install
+
+Not currently supported — the repo is structured as a home-manager flake. If you want a portable bash-install variant, open an issue.
 
 ## Usage
 
@@ -112,8 +145,8 @@ State model:
 
 ## Roadmap
 
-- Nix flake + `homeManagerModules.default` for one-line declarative install (NixOS/home-manager).
 - Config file (`~/.config/claude-waybar/config.toml`) for tmux naming scheme, urgency thresholds, custom paths.
+- Portable non-Nix install script for Arch/Debian/etc.
 - Sway / river / niri support (waybar module is already portable; only the hypr binds need per-WM equivalents).
 - Per-project "auto-accept this tool" rules layered on top of Claude Code's own allowlist.
 - Optional rofi/wofi picker for "which pending prompt to accept" when multiple are queued.
