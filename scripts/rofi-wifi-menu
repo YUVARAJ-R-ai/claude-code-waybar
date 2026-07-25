@@ -6,7 +6,10 @@
 #   Enter on ↻ row     → force rescan and reopen
 #   Enter on ⚙ row     → toggle Wi-Fi radio
 #   Enter on ✏ row     → open nm-connection-editor (if installed)
-#   Alt-f on SSID      → forget saved connection
+#   Alt-x on SSID      → eXpunge (forget) saved connection
+#
+# Note: Alt-f is deliberately avoided — rofi's default kb-move-word-forward
+# already binds it, which causes a startup error dialog.
 #
 # Argument:
 #   --refresh   Force a fresh scan before opening (used by waybar right-click).
@@ -80,9 +83,9 @@ full_menu=$(printf '%s\n───────────────\n%s' "$ext
 set +e
 chosen=$(printf '%s' "$full_menu" | rofi \
   -dmenu -i \
-  -p "Wi-Fi  (Enter = connect · Alt-f = forget)" \
+  -p "Wi-Fi  (Enter = connect · Alt-x = forget)" \
   -lines 15 \
-  -kb-custom-1 "Alt+f")
+  -kb-custom-1 "Alt+x")
 rc=$?
 set -e
 
@@ -121,7 +124,7 @@ if [ -z "$ssid" ]; then
   exit 1
 fi
 
-# Alt-f pressed on an SSID row → forget saved connection.
+# Alt-x pressed on an SSID row → forget saved connection.
 if [ "$rc" -eq 10 ]; then
   if nmcli connection delete id "$ssid" >/dev/null 2>&1; then
     notify "Forgotten" "$ssid"

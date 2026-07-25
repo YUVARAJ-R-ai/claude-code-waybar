@@ -8,8 +8,11 @@
 #   Enter    → accept (if pending) or focus terminal (if idle)
 #   Alt-a    → accept the pending prompt
 #   Alt-r    → reject the pending prompt
-#   Alt-f    → focus the terminal in a new kitty window
+#   Alt-g    → focus (Go to) the terminal in a new kitty window
 #   Alt-k    → kill the tmux session
+#
+# Note: Alt-f is deliberately NOT used — rofi binds it by default to
+# `kb-move-word-forward` and reusing it triggers a startup error dialog.
 
 set -euo pipefail
 
@@ -56,7 +59,7 @@ for s in "${sessions[@]}"; do
 done
 menu="${menu%$'\n'}"
 
-prompt="Claude sessions  (⏎ · Alt-a accept · Alt-r reject · Alt-f focus · Alt-k kill)"
+prompt="Claude sessions  (⏎ · Alt-a accept · Alt-r reject · Alt-g focus · Alt-k kill)"
 
 set +e
 chosen=$(printf '%s' "$menu" | rofi \
@@ -66,7 +69,7 @@ chosen=$(printf '%s' "$menu" | rofi \
   -theme-str 'window { location: east; anchor: east; width: 640px; y-offset: -20px; }' \
   -kb-custom-1 "Alt+a" \
   -kb-custom-2 "Alt+r" \
-  -kb-custom-3 "Alt+f" \
+  -kb-custom-3 "Alt+g" \
   -kb-custom-4 "Alt+k")
 rc=$?
 set -e
@@ -104,7 +107,7 @@ case "$rc" in
     fi ;;
   10) action="accept" ;;
   11) action="reject" ;;
-  12) action="focus"  ;;
+  12) action="focus"  ;;   # Alt-g
   13) action="kill"   ;;
   *)  exit 0 ;;
 esac
