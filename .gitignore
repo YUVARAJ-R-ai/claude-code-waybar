@@ -1,0 +1,11 @@
+*.swp
+*.swo
+*~
+.DS_Store
+node_modules/
+dist/
+build/
+
+# local state that shouldn't be checked in
+state/
+.local/

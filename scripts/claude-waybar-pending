@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# claude-waybar-pending — waybar custom-module producer.
+# Emits one JSON line describing the number of pending Claude Code prompts across all sessions.
+#
+# Waybar config:
+#   "custom/claude": {
+#     "exec": "~/.local/bin/claude-waybar-pending",
+#     "interval": 5,
+#     "signal": 8,
+#     "return-type": "json",
+#     ...
+#   }
+
+set -euo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/claude-waybar/pending"
+mkdir -p "$state_dir"
+
+shopt -s nullglob
+files=( "$state_dir"/*.json )
+count="${#files[@]}"
+
+if [ "$count" -eq 0 ]; then
+  printf '{"text":"","tooltip":"No pending Claude prompts","class":"idle","alt":"idle"}\n'
+  exit 0
+fi
+
+tooltip=""
+for f in "${files[@]}"; do
+  project=$(jq -r '.project // "unknown"' "$f")
+  msg=$(jq -r '.message // ""' "$f" | head -c 120)
+  age=$(( $(date +%s) - $(stat -c %Y "$f") ))
+  tooltip+=$'\n'"• ${project}  (${age}s ago)"
+  [ -n "$msg" ] && tooltip+=$'\n'"    ${msg}"
+done
+tooltip="${tooltip#$'\n'}"
+
+# Escape tooltip as a JSON string with jq
+jq -c -n --arg t "⏸ $count" --arg tt "$tooltip" \
+  '{text:$t, tooltip:$tt, class:"pending", alt:"pending"}'

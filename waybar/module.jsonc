@@ -1,0 +1,35 @@
+// claude-waybar — custom waybar modules.
+//
+// 1. Merge the objects below into your main waybar config's module map.
+// 2. Add "custom/claude" and "network" into "modules-left" / "-center" / "-right" arrays.
+// 3. Copy waybar/style.css contents into your waybar style.css (or @import it).
+// 4. Reload waybar (killall -SIGUSR2 waybar) or restart.
+
+{
+  "custom/claude": {
+    "exec": "~/.local/bin/claude-waybar-pending",
+    "interval": 5,
+    "signal": 8,
+    "return-type": "json",
+    "format": "{}",
+    "tooltip": true,
+    "on-click":        "~/.local/bin/claude-waybar-accept accept",
+    "on-click-right":  "~/.local/bin/claude-waybar-accept reject",
+    "on-click-middle": "~/.local/bin/claude-waybar-accept focus"
+  },
+
+  // Built-in waybar network module + click → rofi-wifi-menu picker.
+  "network": {
+    "interval": 5,
+    "format-wifi":         "󰖩  {essid} ({signalStrength}%)",
+    "format-ethernet":     "󰈀  {ifname}",
+    "format-linked":       "󰈀  {ifname} (no IP)",
+    "format-disconnected": "󰖪  offline",
+    "format-disabled":     "󰖪  wifi off",
+    "tooltip-format":          "{ifname}: {ipaddr}/{cidr}\ngateway: {gwaddr}",
+    "tooltip-format-wifi":     "{essid} — {signalStrength}%\n{ifname}: {ipaddr}\ngateway: {gwaddr}\nfreq: {frequency} MHz",
+    "tooltip-format-disconnected": "click to pick a network",
+    "on-click":       "~/.local/bin/rofi-wifi-menu",
+    "on-click-right": "kitty --title 'nmtui' -e nmtui"
+  }
+}

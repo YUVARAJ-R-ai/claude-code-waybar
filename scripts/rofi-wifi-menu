@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# rofi-wifi-menu — NetworkManager wifi picker as a rofi popup.
+# Bind waybar's network on-click (or Super+N) to this.
+
+set -euo pipefail
+
+notify() { notify-send -a wifi-menu "$@"; }
+
+if ! systemctl is-active NetworkManager >/dev/null 2>&1; then
+  notify -u critical "NetworkManager is not running"
+  exit 1
+fi
+
+if ! command -v rofi >/dev/null; then
+  notify -u critical "rofi not installed"
+  exit 1
+fi
+
+# Trigger a fresh scan.
+nmcli device wifi rescan >/dev/null 2>&1 || true
+sleep 1
+
+# Parse nmcli terse output. --escape yes turns ':' inside SSIDs into '\:' so
+# we split on ':' safely (with \: temporarily replaced by \x01 → restored after).
+declare -a ssids secs
+seen=""
+menu=""
+
+while IFS= read -r row; do
+  clean=$(printf '%s' "$row" | sed 's/\\:/\x01/g')
+  IFS=':' read -r in_use bars sec ssid_raw <<<"$clean"
+  ssid=$(printf '%s' "$ssid_raw" | tr '\001' ':')
+
+  [ -z "$ssid" ] && continue
+  case $'\n'"$seen"$'\n' in *$'\n'"$ssid"$'\n'*) continue;; esac
+  seen+="${ssid}"$'\n'
+
+  ssids+=("$ssid")
+  secs+=("$sec")
+
+  marker=$([ "$in_use" = "*" ] && printf '✓' || printf ' ')
+  if [ -z "$sec" ] || [ "$sec" = "--" ]; then lock="🔓"; else lock="🔒"; fi
+  bars_disp="${bars:-____}"
+  menu+=$(printf '%s  %s  %-4s  %s' "$marker" "$lock" "$bars_disp" "$ssid")$'\n'
+done < <(nmcli --terse --escape yes --fields IN-USE,BARS,SECURITY,SSID device wifi list 2>/dev/null)
+
+wifi_state=$(nmcli -t -f WIFI radio | tr -d '\n')
+if [ "$wifi_state" = "enabled" ]; then
+  toggle="󰖪  Disable WiFi"
+else
+  toggle="󰖩  Enable WiFi"
+fi
+
+full_menu=$(printf '%s\n───────────────\n%s' "$toggle" "$menu")
+
+chosen=$(printf '%s' "$full_menu" | rofi -dmenu -i -p "WiFi" -lines 15 || true)
+[ -z "$chosen" ] && exit 0
+
+case "$chosen" in
+  *"Enable WiFi")  nmcli radio wifi on;  notify "WiFi enabled";  exit 0 ;;
+  *"Disable WiFi") nmcli radio wifi off; notify "WiFi disabled"; exit 0 ;;
+  "───────────────") exit 0 ;;
+esac
+
+# Match chosen line back to an SSID (suffix match).
+ssid=""; sec=""
+for i in "${!ssids[@]}"; do
+  if [[ "$chosen" == *"  ${ssids[$i]}" ]]; then
+    ssid="${ssids[$i]}"; sec="${secs[$i]}"; break
+  fi
+done
+
+if [ -z "$ssid" ]; then
+  notify -u critical "Could not parse selection"
+  exit 1
+fi
+
+# Already-known → activate. Otherwise connect (with password if secured).
+if nmcli -t -f NAME connection show | grep -Fxq "$ssid"; then
+  if nmcli connection up id "$ssid" >/dev/null 2>&1; then
+    notify "Connected" "$ssid"
+  else
+    notify -u critical "Failed to activate" "$ssid"
+  fi
+elif [ -n "$sec" ] && [ "$sec" != "--" ]; then
+  pw=$(rofi -dmenu -password -p "Password: $ssid" -lines 0 || true)
+  [ -z "$pw" ] && exit 0
+  if nmcli device wifi connect "$ssid" password "$pw" >/dev/null 2>&1; then
+    notify "Connected" "$ssid"
+  else
+    notify -u critical "Auth failed" "$ssid"
+  fi
+else
+  if nmcli device wifi connect "$ssid" >/dev/null 2>&1; then
+    notify "Connected" "$ssid"
+  else
+    notify -u critical "Failed to connect" "$ssid"
+  fi
+fi

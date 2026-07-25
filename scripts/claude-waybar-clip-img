@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# claude-waybar-clip-img — take the image on the Wayland clipboard, save it to disk,
+# then replace the clipboard contents with the path so it can be pasted into Claude Code.
+#
+# Typical bindings:
+#   Super+Shift+V         → this script (paste from existing clipboard image)
+#   Super+Shift+S         → grim -g "$(slurp)" - | wl-copy && this script (region screenshot)
+
+set -euo pipefail
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude-waybar/imgs"
+mkdir -p "$cache_dir"
+
+mime=$(wl-paste --list-types 2>/dev/null | grep -m1 '^image/' || true)
+if [ -z "$mime" ]; then
+  notify-send -a claude-waybar -u critical "No image in clipboard" \
+    "Copy an image first (or use Super+Shift+S for a region screenshot)."
+  exit 1
+fi
+
+ext="${mime#image/}"
+file="$cache_dir/$(date +%Y%m%d-%H%M%S).${ext}"
+
+if ! wl-paste --type "$mime" > "$file"; then
+  rm -f "$file"
+  notify-send -a claude-waybar -u critical "Clipboard read failed"
+  exit 1
+fi
+
+printf '%s' "$file" | wl-copy
+notify-send -a claude-waybar "Image ready to paste" \
+  "Path in clipboard — Ctrl+Shift+V in Claude prompt:\n$file"

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# claude-waybar-accept — act on a pending Claude prompt from outside the session.
+#
+# Usage:
+#   claude-waybar-accept accept   # send Enter (default = "Yes") into the tmux session
+#   claude-waybar-accept reject   # send Escape (cancels the prompt)
+#   claude-waybar-accept focus    # attach the tmux session in a new kitty window
+#
+# Acts on the OLDEST pending prompt. For per-session control, pass the state file as $2.
+
+set -euo pipefail
+
+action="${1:-accept}"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/claude-waybar/pending"
+mkdir -p "$state_dir"
+
+target_file="${2:-}"
+if [ -z "$target_file" ]; then
+  target_file=$(ls -tr "$state_dir"/*.json 2>/dev/null | head -1 || true)
+fi
+
+if [ -z "$target_file" ] || [ ! -f "$target_file" ]; then
+  notify-send -a claude-waybar "No pending Claude prompts"
+  exit 0
+fi
+
+tmux_target=$(jq -r '.tmux_target' "$target_file")
+project=$(jq -r '.project' "$target_file")
+
+if ! tmux has-session -t "$tmux_target" 2>/dev/null; then
+  notify-send -a claude-waybar -u critical "tmux session missing" "$tmux_target"
+  rm -f "$target_file"
+  pkill -RTMIN+8 waybar 2>/dev/null || true
+  exit 1
+fi
+
+case "$action" in
+  accept)
+    # Claude Code permission prompts default-select "Yes" — Enter approves.
+    tmux send-keys -t "$tmux_target" Enter
+    notify-send -a claude-waybar "Approved" "$project"
+    ;;
+  reject)
+    # Escape cancels the prompt (equivalent to "No").
+    tmux send-keys -t "$tmux_target" Escape
+    notify-send -a claude-waybar "Rejected" "$project"
+    ;;
+  focus)
+    setsid -f kitty --title "Claude: $project" -e tmux attach -t "$tmux_target" >/dev/null 2>&1
+    exit 0
+    ;;
+  *)
+    echo "unknown action: $action  (accept|reject|focus)" >&2
+    exit 2
+    ;;
+esac
+
+rm -f "$target_file"
+pkill -RTMIN+8 waybar 2>/dev/null || true

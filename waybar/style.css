@@ -1,0 +1,54 @@
+/* claude-waybar — styling for the "custom/claude" module.
+   Tuned for dark / transparent bars (paired with waybar-jwt-transparent + mountainscapedark wallpaper).
+   Colors use rgba() so it looks correct on any wallpaper. */
+
+#custom-claude {
+  padding: 0 10px;
+  margin: 0 4px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.05);
+  transition: background 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+#custom-claude.idle {
+  /* No pending prompts — quietly disappear. */
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  color: transparent;
+  background: transparent;
+}
+
+#custom-claude.pending {
+  color: #ffb86c;
+  background: rgba(255, 184, 108, 0.15);
+  border: 1px solid rgba(255, 184, 108, 0.45);
+  animation: claude-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes claude-pulse {
+  0%, 100% { background: rgba(255, 184, 108, 0.15); }
+  50%      { background: rgba(255, 184, 108, 0.38); }
+}
+
+/* -------- network module (paired with rofi-wifi-menu) -------- */
+
+#network {
+  padding: 0 10px;
+  margin: 0 4px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.05);
+  transition: background 200ms ease, color 200ms ease;
+}
+
+#network.disconnected,
+#network.disabled {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+
+#network.linked {
+  color: #ffd166;
+}

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# claude-waybar-session — open/attach a tmux-hosted Claude Code session for a project.
+#
+# Usage:
+#   claude-waybar-session                    # uses basename of $PWD
+#   claude-waybar-session <name>             # attaches/creates by name in $PWD
+#   claude-waybar-session <name> <dir>       # explicit dir
+#
+# Session name convention: "claude-<name>"  (tmux disallows ':' in session names).
+
+set -euo pipefail
+
+name="${1:-$(basename "$PWD")}"
+dir="${2:-$PWD}"
+session="claude-${name}"
+
+if ! command -v tmux >/dev/null; then
+  echo "tmux not installed. In ZaneyOS: set tmuxEnable = true in variables.nix, or add tmux to host-packages.nix." >&2
+  exit 1
+fi
+if ! command -v claude >/dev/null; then
+  echo "claude (Claude Code) not found on PATH." >&2
+  exit 1
+fi
+
+if ! tmux has-session -t "$session" 2>/dev/null; then
+  tmux new-session -d -s "$session" -c "$dir" -x "$(tput cols)" -y "$(tput lines)" \
+    "claude"
+fi
+
+exec tmux attach -t "$session"
