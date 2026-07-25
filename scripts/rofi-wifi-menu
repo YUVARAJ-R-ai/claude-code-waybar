@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
-# rofi-wifi-menu — NetworkManager wifi picker as a rofi popup.
-# Bind waybar's network on-click (or Super+N) to this.
+# rofi-wifi-menu — instant NetworkManager Wi-Fi picker.
+#
+# UX:
+#   Enter on SSID row  → connect (prompts password for new secured networks)
+#   Enter on ↻ row     → force rescan and reopen
+#   Enter on ⚙ row     → toggle Wi-Fi radio
+#   Enter on ✏ row     → open nm-connection-editor (if installed)
+#   Alt-f on SSID      → forget saved connection
+#
+# Argument:
+#   --refresh   Force a fresh scan before opening (used by waybar right-click).
+#
+# Design:
+#   Default open uses the CACHED scan → rofi appears instantly.
+#   A background rescan is kicked off so the next open has fresh results.
 
 set -euo pipefail
 
@@ -10,59 +23,92 @@ if ! systemctl is-active NetworkManager >/dev/null 2>&1; then
   notify -u critical "NetworkManager is not running"
   exit 1
 fi
-
 if ! command -v rofi >/dev/null; then
   notify -u critical "rofi not installed"
   exit 1
 fi
 
-# Trigger a fresh scan.
-nmcli device wifi rescan >/dev/null 2>&1 || true
-sleep 1
+do_rescan=""
+if [ "${1:-}" = "--refresh" ]; then
+  do_rescan=1
+fi
 
-# Parse nmcli terse output. --escape yes turns ':' inside SSIDs into '\:' so
-# we split on ':' safely (with \: temporarily replaced by \x01 → restored after).
+if [ -n "$do_rescan" ]; then
+  nmcli device wifi rescan >/dev/null 2>&1 || true
+  sleep 1
+else
+  # Async: warm the cache for the *next* open without blocking this one.
+  (nmcli device wifi rescan >/dev/null 2>&1 &) &
+fi
+
+# Parse `nmcli -t` output. --escape yes turns ':' inside SSIDs into '\:'; we
+# temporarily swap that to \x01, split on ':', then swap back.
 declare -a ssids secs
 seen=""
 menu=""
-
 while IFS= read -r row; do
   clean=$(printf '%s' "$row" | sed 's/\\:/\x01/g')
   IFS=':' read -r in_use bars sec ssid_raw <<<"$clean"
   ssid=$(printf '%s' "$ssid_raw" | tr '\001' ':')
-
   [ -z "$ssid" ] && continue
   case $'\n'"$seen"$'\n' in *$'\n'"$ssid"$'\n'*) continue;; esac
   seen+="${ssid}"$'\n'
-
   ssids+=("$ssid")
   secs+=("$sec")
-
   marker=$([ "$in_use" = "*" ] && printf '✓' || printf ' ')
   if [ -z "$sec" ] || [ "$sec" = "--" ]; then lock="🔓"; else lock="🔒"; fi
   bars_disp="${bars:-____}"
   menu+=$(printf '%s  %s  %-4s  %s' "$marker" "$lock" "$bars_disp" "$ssid")$'\n'
-done < <(nmcli --terse --escape yes --fields IN-USE,BARS,SECURITY,SSID device wifi list 2>/dev/null)
+done < <(nmcli --terse --escape yes --fields IN-USE,BARS,SECURITY,SSID device wifi list --rescan no 2>/dev/null)
 
 wifi_state=$(nmcli -t -f WIFI radio | tr -d '\n')
 if [ "$wifi_state" = "enabled" ]; then
-  toggle="󰖪  Disable WiFi"
+  toggle_label="⚙  Toggle Wi-Fi  (currently ON)"
 else
-  toggle="󰖩  Enable WiFi"
+  toggle_label="⚙  Toggle Wi-Fi  (currently OFF)"
 fi
 
-full_menu=$(printf '%s\n───────────────\n%s' "$toggle" "$menu")
+extras="↻  Refresh scan"$'\n'
+extras+="$toggle_label"$'\n'
+if command -v nm-connection-editor >/dev/null; then
+  extras+="✏  Edit connections…"$'\n'
+fi
 
-chosen=$(printf '%s' "$full_menu" | rofi -dmenu -i -p "WiFi" -lines 15 || true)
-[ -z "$chosen" ] && exit 0
+full_menu=$(printf '%s\n───────────────\n%s' "$extras" "$menu")
 
+# rofi returns 0 on Enter, 10 on kb-custom-1, 1 on ESC/cancel.
+set +e
+chosen=$(printf '%s' "$full_menu" | rofi \
+  -dmenu -i \
+  -p "Wi-Fi  (Enter = connect · Alt-f = forget)" \
+  -lines 15 \
+  -kb-custom-1 "Alt+f")
+rc=$?
+set -e
+
+if [ "$rc" -eq 1 ] || [ -z "$chosen" ]; then
+  exit 0
+fi
+
+# Extras first.
 case "$chosen" in
-  *"Enable WiFi")  nmcli radio wifi on;  notify "WiFi enabled";  exit 0 ;;
-  *"Disable WiFi") nmcli radio wifi off; notify "WiFi disabled"; exit 0 ;;
-  "───────────────") exit 0 ;;
+  "↻  Refresh scan")
+    exec "$0" --refresh ;;
+  *"Toggle Wi-Fi"*)
+    if [ "$wifi_state" = "enabled" ]; then
+      nmcli radio wifi off; notify "Wi-Fi disabled"
+    else
+      nmcli radio wifi on;  notify "Wi-Fi enabled"
+    fi
+    exit 0 ;;
+  "✏  Edit connections…")
+    setsid -f nm-connection-editor >/dev/null 2>&1 || nm-connection-editor &
+    exit 0 ;;
+  "───────────────")
+    exit 0 ;;
 esac
 
-# Match chosen line back to an SSID (suffix match).
+# Match chosen line back to an SSID (suffix match on the printf layout).
 ssid=""; sec=""
 for i in "${!ssids[@]}"; do
   if [[ "$chosen" == *"  ${ssids[$i]}" ]]; then
@@ -75,7 +121,17 @@ if [ -z "$ssid" ]; then
   exit 1
 fi
 
-# Already-known → activate. Otherwise connect (with password if secured).
+# Alt-f pressed on an SSID row → forget saved connection.
+if [ "$rc" -eq 10 ]; then
+  if nmcli connection delete id "$ssid" >/dev/null 2>&1; then
+    notify "Forgotten" "$ssid"
+  else
+    notify -u critical "No saved connection to forget" "$ssid"
+  fi
+  exit 0
+fi
+
+# Enter → connect (or reactivate if already known).
 if nmcli -t -f NAME connection show | grep -Fxq "$ssid"; then
   if nmcli connection up id "$ssid" >/dev/null 2>&1; then
     notify "Connected" "$ssid"

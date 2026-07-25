@@ -1,21 +1,74 @@
 #!/usr/bin/env bash
-# claude-waybar-session — open/attach a tmux-hosted Claude Code session for a project.
+# claude-waybar-session — open/attach a tmux-hosted Claude Code session.
 #
 # Usage:
-#   claude-waybar-session                    # uses basename of $PWD
-#   claude-waybar-session <name>             # attaches/creates by name in $PWD
-#   claude-waybar-session <name> <dir>       # explicit dir
+#   claude-waybar-session                             # basename($PWD), no claude flags
+#   claude-waybar-session --resume                    # forwards --resume to claude
+#   claude-waybar-session -n foo                      # explicit session name
+#   claude-waybar-session -d ~/some/dir               # explicit working dir
+#   claude-waybar-session -n foo -d ~/x --resume      # combined
+#   claude-waybar-session -- --resume                 # explicit passthrough separator
+#   claude-waybar-session -c "explain this repo"      # -c goes to claude (unknown to us)
 #
-# Session name convention: "claude-<name>"  (tmux disallows ':' in session names).
+# Rules:
+#   -n/--name and -d/--dir are consumed by this script.
+#   Everything else (or anything after `--`) is forwarded verbatim to `claude`.
+#   If the session already exists, we just attach — claude args are only applied
+#   on first-launch (rename the session or kill it if you need different flags).
 
 set -euo pipefail
 
-name="${1:-$(basename "$PWD")}"
-dir="${2:-$PWD}"
+show_help() {
+  cat <<'HELP'
+claude-waybar-session — open/attach a tmux-hosted Claude Code session.
+
+Usage:
+  claude-waybar-session [-n NAME] [-d DIR] [-- ] [CLAUDE_ARGS...]
+
+Options for this script:
+  -n, --name NAME    tmux session name suffix (default: basename of $PWD)
+  -d, --dir  DIR     working directory for the session (default: $PWD)
+  -h, --help         show this help
+
+Everything else — or anything after `--` — is forwarded to `claude`.
+
+Examples:
+  claude-waybar-session --resume
+  claude-waybar-session -n foo --resume
+  claude-waybar-session -- --model sonnet -c "explain this"
+HELP
+}
+
+name=""
+dir=""
+claude_args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--name)
+      [ $# -lt 2 ] && { echo "$1 requires a value" >&2; exit 2; }
+      name="$2"; shift 2 ;;
+    -d|--dir)
+      [ $# -lt 2 ] && { echo "$1 requires a value" >&2; exit 2; }
+      dir="$2"; shift 2 ;;
+    -h|--help)
+      show_help; exit 0 ;;
+    --)
+      shift
+      claude_args+=("$@")
+      break ;;
+    *)
+      claude_args+=("$1")
+      shift ;;
+  esac
+done
+
+name="${name:-$(basename "$PWD")}"
+dir="${dir:-$PWD}"
 session="claude-${name}"
 
 if ! command -v tmux >/dev/null; then
-  echo "tmux not installed. In ZaneyOS: set tmuxEnable = true in variables.nix, or add tmux to host-packages.nix." >&2
+  echo "tmux not installed." >&2
   exit 1
 fi
 if ! command -v claude >/dev/null; then
@@ -23,9 +76,18 @@ if ! command -v claude >/dev/null; then
   exit 1
 fi
 
+# Build the shell-command tmux will run inside the new session.
+# printf %q gives us safe re-parseable quoting for each claude arg.
+cmd="claude"
+for a in "${claude_args[@]}"; do
+  cmd+=" $(printf '%q' "$a")"
+done
+
 if ! tmux has-session -t "$session" 2>/dev/null; then
-  tmux new-session -d -s "$session" -c "$dir" -x "$(tput cols)" -y "$(tput lines)" \
-    "claude"
+  tmux new-session -d -s "$session" -c "$dir" \
+    -x "$(tput cols 2>/dev/null || echo 200)" \
+    -y "$(tput lines 2>/dev/null || echo 50)" \
+    "$cmd"
 fi
 
 exec tmux attach -t "$session"

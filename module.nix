@@ -18,6 +18,8 @@
     (builtins.readFile ./scripts/claude-waybar-accept);
   claudeWaybarClipImg = pkgs.writeShellScriptBin "claude-waybar-clip-img"
     (builtins.readFile ./scripts/claude-waybar-clip-img);
+  claudeWaybarPanel = pkgs.writeShellScriptBin "claude-waybar-panel"
+    (builtins.readFile ./scripts/claude-waybar-panel);
   rofiWifiMenu = pkgs.writeShellScriptBin "rofi-wifi-menu"
     (builtins.readFile ./scripts/rofi-wifi-menu);
 in {
@@ -47,13 +49,18 @@ in {
         claudeWaybarPending
         claudeWaybarAccept
         claudeWaybarClipImg
+        claudeWaybarPanel
         pkgs.tmux
         pkgs.libnotify
         pkgs.jq
         pkgs.wl-clipboard
+        pkgs.rofi # used by claude-waybar-panel (session picker)
       ]
       ++ lib.optional cfg.wifi.enable rofiWifiMenu
-      ++ lib.optionals cfg.wifi.enable [pkgs.rofi pkgs.networkmanager];
+      ++ lib.optionals cfg.wifi.enable [
+        pkgs.networkmanager
+        pkgs.networkmanagerapplet # provides nm-connection-editor for the ✏ menu entry
+      ];
 
     # tmux is the host process for Claude Code sessions — hard dep.
     programs.tmux.enable = lib.mkDefault true;

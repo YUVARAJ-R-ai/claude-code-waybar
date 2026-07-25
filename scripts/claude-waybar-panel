@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# claude-waybar-panel — right-side rofi overlay showing all active tmux Claude
+# sessions with pending-prompt summaries. Lets you pick which one to act on.
+#
+# Bind waybar's custom/claude on-click to this script.
+#
+# Actions:
+#   Enter    → accept (if pending) or focus terminal (if idle)
+#   Alt-a    → accept the pending prompt
+#   Alt-r    → reject the pending prompt
+#   Alt-f    → focus the terminal in a new kitty window
+#   Alt-k    → kill the tmux session
+
+set -euo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/claude-waybar/pending"
+mkdir -p "$state_dir"
+
+# Gather all claude-* tmux sessions (may be zero).
+mapfile -t sessions < <(tmux ls 2>/dev/null | awk -F: '/^claude-/ {print $1}' | sort -u)
+
+if [ ${#sessions[@]} -eq 0 ]; then
+  notify-send -a claude-waybar "No active Claude sessions"
+  exit 0
+fi
+
+# Index pending files by tmux_target.
+declare -A pending_file pending_msg pending_age
+now=$(date +%s)
+shopt -s nullglob
+for f in "$state_dir"/*.json; do
+  tgt=$(jq -r '.tmux_target // ""' "$f")
+  [ -z "$tgt" ] && continue
+  pending_file[$tgt]="$f"
+  msg=$(jq -r '.message // ""' "$f" | head -c 80 | tr '\n' ' ')
+  pending_msg[$tgt]="$msg"
+  ts=$(stat -c %Y "$f" 2>/dev/null || echo "$now")
+  pending_age[$tgt]=$(( now - ts ))
+done
+
+# Build menu rows + parallel metadata array so we can dispatch by index.
+menu=""
+declare -a rows_meta
+for s in "${sessions[@]}"; do
+  proj="${s#claude-}"
+  if [ -n "${pending_file[$s]:-}" ]; then
+    msg="${pending_msg[$s]:-Waiting…}"
+    age="${pending_age[$s]:-0}"
+    row=$(printf '⏸  %-24s — %s  (%ds)' "$proj" "$msg" "$age")
+    rows_meta+=("$s|1")
+  else
+    row=$(printf '✓  %-24s — running, no pending' "$proj")
+    rows_meta+=("$s|0")
+  fi
+  menu+="$row"$'\n'
+done
+menu="${menu%$'\n'}"
+
+prompt="Claude sessions  (⏎ · Alt-a accept · Alt-r reject · Alt-f focus · Alt-k kill)"
+
+set +e
+chosen=$(printf '%s' "$menu" | rofi \
+  -dmenu -i \
+  -p "$prompt" \
+  -lines 12 \
+  -theme-str 'window { location: east; anchor: east; width: 640px; y-offset: -20px; }' \
+  -kb-custom-1 "Alt+a" \
+  -kb-custom-2 "Alt+r" \
+  -kb-custom-3 "Alt+f" \
+  -kb-custom-4 "Alt+k")
+rc=$?
+set -e
+
+if [ "$rc" -eq 1 ] || [ -z "$chosen" ]; then
+  exit 0
+fi
+
+# Match chosen line → row index (line-by-line, avoids IFS foot-guns on titles).
+idx=-1
+i=0
+while IFS= read -r row; do
+  if [ "$row" = "$chosen" ]; then
+    idx=$i
+    break
+  fi
+  i=$((i+1))
+done <<<"$menu"
+
+if [ "$idx" -lt 0 ]; then
+  notify-send -a claude-waybar "Panel: could not match selection"
+  exit 1
+fi
+
+meta="${rows_meta[$idx]}"
+target="${meta%|*}"
+is_pending="${meta#*|}"
+proj="${target#claude-}"
+
+action=""
+case "$rc" in
+  0)
+    if [ "$is_pending" = "1" ]; then action="accept"
+    else action="focus"
+    fi ;;
+  10) action="accept" ;;
+  11) action="reject" ;;
+  12) action="focus"  ;;
+  13) action="kill"   ;;
+  *)  exit 0 ;;
+esac
+
+if ! tmux has-session -t "$target" 2>/dev/null; then
+  notify-send -a claude-waybar -u critical "tmux session missing" "$target"
+  [ -n "${pending_file[$target]:-}" ] && rm -f "${pending_file[$target]}"
+  pkill -RTMIN+8 waybar 2>/dev/null || true
+  exit 1
+fi
+
+case "$action" in
+  accept)
+    tmux send-keys -t "$target" Enter
+    notify-send -a claude-waybar "Approved" "$proj"
+    [ -n "${pending_file[$target]:-}" ] && rm -f "${pending_file[$target]}"
+    ;;
+  reject)
+    tmux send-keys -t "$target" Escape
+    notify-send -a claude-waybar "Rejected" "$proj"
+    [ -n "${pending_file[$target]:-}" ] && rm -f "${pending_file[$target]}"
+    ;;
+  focus)
+    setsid -f kitty --title "Claude: $proj" -e tmux attach -t "$target" >/dev/null 2>&1 || \
+      setsid -f kitty --title "Claude: $proj" -e tmux attach -t "$target"
+    ;;
+  kill)
+    tmux kill-session -t "$target"
+    notify-send -a claude-waybar "Killed" "$target"
+    [ -n "${pending_file[$target]:-}" ] && rm -f "${pending_file[$target]}"
+    ;;
+esac
+
+pkill -RTMIN+8 waybar 2>/dev/null || true

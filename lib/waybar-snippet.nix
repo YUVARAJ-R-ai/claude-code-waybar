@@ -29,9 +29,12 @@
       return-type = "json";
       format = "{}";
       tooltip = true;
-      on-click = "claude-waybar-accept accept";
-      on-click-right = "claude-waybar-accept reject";
+      # Left-click: open the session panel (rofi right-side overlay). Choose
+      # which session to accept/reject/focus/kill when more than one is pending.
+      on-click = "claude-waybar-panel";
+      # Middle/right keep the "act on oldest" fast-path for muscle memory.
       on-click-middle = "claude-waybar-accept focus";
+      on-click-right = "claude-waybar-accept reject";
     };
 
     network = {
@@ -44,8 +47,9 @@
       tooltip-format = "{ifname}: {ipaddr}/{cidr}\ngateway: {gwaddr}";
       tooltip-format-wifi = "{essid} — {signalStrength}%\n{ifname}: {ipaddr}\ngateway: {gwaddr}\nfreq: {frequency} MHz";
       tooltip-format-disconnected = "click to pick a network";
+      # Left-click: instant open with cached scan. Right-click: force fresh scan.
       on-click = "rofi-wifi-menu";
-      on-click-right = "kitty --title 'nmtui' -e nmtui";
+      on-click-right = "rofi-wifi-menu --refresh";
     };
   };
 
