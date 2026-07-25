@@ -70,8 +70,15 @@
       animation: claude-pulse 1.6s ease-in-out infinite;
     }
     @keyframes claude-pulse {
-      0%, 100% { background: rgba(255, 184, 108, 0.18); }
-      50%      { background: rgba(255, 184, 108, 0.42); }
+      0% {
+        background: rgba(255, 184, 108, 0.18);
+      }
+      50% {
+        background: rgba(255, 184, 108, 0.42);
+      }
+      100% {
+        background: rgba(255, 184, 108, 0.18);
+      }
     }
     #network.disconnected,
     #network.disabled {
