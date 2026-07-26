@@ -24,42 +24,54 @@ project=$(basename "$cwd")
 tmux_target="claude-${project}"
 
 # ---- Grab a short summary of the *actual* pending action from the tmux pane.
-# Claude Code renders permission prompts inside a unicode box:
-#     ╭─────────────────╮
-#     │ Bash command    │      <- title
-#     │                 │
-#     │   rm -rf /tmp   │      <- body
-#     │                 │
-#     │ Do you want to proceed?
-#     ╰─────────────────╯
-# We locate the last "Do you want to proceed" line, walk back to the matching
-# top border "╭", and pull the title + first body line out.
+# Claude Code renders permission prompts like this (observed in the wild):
+#     ──────────────────────────────────  <- top border: horizontal rule only
+#      Bash command                        <- title (may have │ on left)
+#
+#      <the command>                       <- body: 1-2 indented lines
+#      <description>
+#
+#      This command requires approval
+#
+#      Do you want to proceed?
+#      ❯ 1. Yes
+#        2. Yes, and don't ask again ...
+#        3. No
+#     (no bottom border on some renders)
+#
+# Algorithm: find the last "Do you want to proceed" line; walk back to the
+# nearest all-horizontal-rule line (that's the top border); extract the
+# content between them and pull out the first two non-empty lines.
 capture_summary() {
   local target="$1"
   tmux has-session -t "$target" 2>/dev/null || return 0
   # Small delay: the prompt sometimes isn't fully rendered when the hook fires.
   sleep 0.3
   local pane
-  pane=$(tmux capture-pane -p -J -t "$target" -S -120 2>/dev/null || true)
+  pane=$(tmux capture-pane -p -J -t "$target" -S -200 2>/dev/null || true)
   [ -z "$pane" ] && return 0
 
   local end top
   end=$(printf '%s' "$pane" | grep -n 'Do you want to proceed' | tail -1 | cut -d: -f1)
   [ -z "$end" ] && return 0
-  top=$(printf '%s' "$pane" | sed -n "1,${end}p" | grep -n '╭' | tail -1 | cut -d: -f1)
+
+  # Top = last line that is essentially a horizontal rule (5+ ─ chars, maybe
+  # with leading whitespace or a single leading │). Accept ─, ━, ═ variants.
+  top=$(printf '%s' "$pane" | sed -n "1,${end}p" \
+    | grep -nE '^[[:space:]│]*[─━═]{5,}' \
+    | tail -1 | cut -d: -f1)
   [ -z "$top" ] && return 0
 
-  # Strip box-drawing chars, trim, drop empty lines and horizontal-rule lines.
+  # Strip left │ + surrounding whitespace, drop empty and rule-only lines.
   local content
   content=$(printf '%s' "$pane" | sed -n "$((top+1)),$((end-1))p" \
-    | tr -d '│╭╮╰╯' \
-    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+    | sed -E 's/^[[:space:]]*│?[[:space:]]*//; s/[[:space:]]*$//' \
     | grep -v '^$' \
-    | grep -v '^─\+$')
+    | grep -vE '^[─━═]+$')
 
   local title body
   title=$(printf '%s' "$content" | sed -n '1p')
-  body=$(printf '%s' "$content"  | sed -n '2p' | cut -c1-70)
+  body=$(printf '%s'  "$content" | sed -n '2p' | cut -c1-70)
 
   if [ -n "$title" ] && [ -n "$body" ]; then
     printf '%s: %s' "$title" "$body"
