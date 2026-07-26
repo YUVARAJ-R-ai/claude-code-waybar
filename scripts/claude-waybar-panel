@@ -66,49 +66,72 @@ prompt="Claude sessions  (⏎ · Alt-a accept · Alt-r reject · Alt-g focus · 
 # just floats a narrow list on top of the base theme and rows get truncated.
 theme='
 * {
-    bg:     #1e1e2eee;
-    fg:     #cdd6f4;
-    accent: #89b4fa;
-    sel-bg: #313244;
+    bg-outer:  #1e2033ee;
+    bg-card:   #2a2d43cc;
+    bg-select: #3a3f5ccc;
+    fg:        #cdd6f4;
+    fg-mute:   #a6adc8;
+    accent:    #89b4fa;
     background-color: transparent;
-    text-color: @fg;
+    text-color:       @fg;
 }
 window {
     location: east;
     anchor:   east;
     width:    720px;
     height:   100%;
-    padding:  16px;
+    padding:  20px;
     border:   0;
     border-radius: 0;
-    background-color: @bg;
+    background-color: @bg-outer;
     background-image: url("", none);
 }
 mainbox {
     children: [ inputbar, listview ];
-    spacing:  10px;
+    spacing:  14px;
     padding:  0;
+    background-color: transparent;
 }
 inputbar {
-    children: [ prompt, entry ];
-    spacing:  8px;
-    padding:  8px 10px;
-    background-color: @sel-bg;
-    border-radius: 6px;
+    children:      [ prompt, entry ];
+    spacing:       10px;
+    padding:       14px 16px;
+    background-color: @bg-card;
+    border:        1px solid;
+    border-color:  @accent;
+    border-radius: 12px;
+    text-color:    @fg;
 }
-prompt { text-color: @accent; }
+prompt {
+    text-color:       @accent;
+    background-color: transparent;
+}
+entry {
+    text-color:       @fg;
+    background-color: transparent;
+    placeholder:      "type to filter…";
+    placeholder-color: @fg-mute;
+}
 listview {
-    lines: 14;
+    lines:        14;
     fixed-height: false;
-    scrollbar: false;
-    spacing: 4px;
+    scrollbar:    false;
+    spacing:      8px;
+    padding:      0;
+    background-color: transparent;
 }
 element {
-    padding: 10px 12px;
-    border-radius: 6px;
+    padding:          14px 16px;
+    spacing:          8px;
+    border:           1px solid;
+    border-color:     @bg-select;
+    border-radius:    12px;
+    background-color: @bg-card;
+    text-color:       @fg;
 }
 element selected {
-    background-color: @sel-bg;
+    background-color: @bg-select;
+    border-color:     @accent;
     text-color:       @accent;
 }
 element-text {
