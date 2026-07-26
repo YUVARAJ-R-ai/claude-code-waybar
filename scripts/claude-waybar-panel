@@ -28,15 +28,16 @@ if [ ${#sessions[@]} -eq 0 ]; then
 fi
 
 # Index pending files by tmux_target.
-declare -A pending_file pending_msg pending_age
+declare -A pending_file pending_sum pending_age
 now=$(date +%s)
 shopt -s nullglob
 for f in "$state_dir"/*.json; do
   tgt=$(jq -r '.tmux_target // ""' "$f")
   [ -z "$tgt" ] && continue
   pending_file[$tgt]="$f"
-  msg=$(jq -r '.message // ""' "$f" | head -c 80 | tr '\n' ' ')
-  pending_msg[$tgt]="$msg"
+  # Prefer the captured summary; fall back to the raw Notification message.
+  sum=$(jq -r '.summary // .message // ""' "$f" | head -c 90 | tr '\n' ' ')
+  pending_sum[$tgt]="$sum"
   ts=$(stat -c %Y "$f" 2>/dev/null || echo "$now")
   pending_age[$tgt]=$(( now - ts ))
 done
@@ -44,14 +45,20 @@ done
 # Build menu rows + parallel metadata array so we can dispatch by index.
 menu=""
 declare -a rows_meta
+# Pango-safe escaping for &, <, > (we're using -markup-rows).
+esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+# Truncate to N chars with ellipsis.
+trim() { local s="$1" n="$2"; if [ "${#s}" -gt "$n" ]; then printf '%s…' "${s:0:$((n-1))}"; else printf '%s' "$s"; fi; }
+
 for s in "${sessions[@]}"; do
-  proj="${s#claude-}"
+  proj=$(esc "${s#claude-}")
   if [ -n "${pending_file[$s]:-}" ]; then
     age="${pending_age[$s]:-0}"
-    row=$(printf '⏸  %s  ·  waiting %ds' "$proj" "$age")
+    sum=$(esc "$(trim "${pending_sum[$s]:-waiting}" 45)")
+    row=$(printf '⏸  <b>%s</b>  <span size="small" alpha="70%%">·  %s  (%ds)</span>' "$proj" "$sum" "$age")
     rows_meta+=("$s|1")
   else
-    row=$(printf '✓  %s  ·  idle' "$proj")
+    row=$(printf '✓  <b>%s</b>  <span size="small" alpha="55%%">·  idle</span>' "$proj")
     rows_meta+=("$s|0")
   fi
   menu+="$row"$'\n'
@@ -65,7 +72,7 @@ theme='
 window {
     location:         east;
     anchor:           east;
-    width:            480px;
+    width:            560px;
     height:           100%;
     padding:          20px;
     border:           0;
