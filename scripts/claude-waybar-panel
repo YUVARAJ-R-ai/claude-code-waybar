@@ -61,12 +61,69 @@ menu="${menu%$'\n'}"
 
 prompt="Claude sessions  (⏎ · Alt-a accept · Alt-r reject · Alt-g focus · Alt-k kill)"
 
+# Full theme-str override so the panel doesn't inherit the user's rofi theme's
+# widths, wallpaper background, or split layout. Otherwise `location: east`
+# just floats a narrow list on top of the base theme and rows get truncated.
+theme='
+* {
+    bg:     #1e1e2eee;
+    fg:     #cdd6f4;
+    accent: #89b4fa;
+    sel-bg: #313244;
+    background-color: transparent;
+    text-color: @fg;
+}
+window {
+    location: east;
+    anchor:   east;
+    width:    720px;
+    height:   100%;
+    padding:  16px;
+    border:   0;
+    border-radius: 0;
+    background-color: @bg;
+    background-image: url("", none);
+}
+mainbox {
+    children: [ inputbar, listview ];
+    spacing:  10px;
+    padding:  0;
+}
+inputbar {
+    children: [ prompt, entry ];
+    spacing:  8px;
+    padding:  8px 10px;
+    background-color: @sel-bg;
+    border-radius: 6px;
+}
+prompt { text-color: @accent; }
+listview {
+    lines: 14;
+    fixed-height: false;
+    scrollbar: false;
+    spacing: 4px;
+}
+element {
+    padding: 10px 12px;
+    border-radius: 6px;
+}
+element selected {
+    background-color: @sel-bg;
+    text-color:       @accent;
+}
+element-text {
+    horizontal-align: 0;
+    vertical-align:   0.5;
+    background-color: transparent;
+    text-color:       inherit;
+}
+'
+
 set +e
 chosen=$(printf '%s' "$menu" | rofi \
   -dmenu -i \
   -p "$prompt" \
-  -lines 12 \
-  -theme-str 'window { location: east; anchor: east; width: 640px; y-offset: -20px; }' \
+  -theme-str "$theme" \
   -kb-custom-1 "Alt+a" \
   -kb-custom-2 "Alt+r" \
   -kb-custom-3 "Alt+g" \
