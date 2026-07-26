@@ -36,8 +36,9 @@ for f in "$state_dir"/*.json; do
   [ -z "$tgt" ] && continue
   pending_file[$tgt]="$f"
   # Prefer the captured summary; fall back to the raw Notification message.
-  # Keep more of it — the row itself will render on two lines.
-  sum=$(jq -r '.summary // .message // ""' "$f" | tr '\n' ' ' | head -c 240)
+  # Keep more of it — the row wraps across multiple lines and can render
+  # up to ~4 wrapped lines of the command.
+  sum=$(jq -r '.summary // .message // ""' "$f" | tr '\n' ' ' | head -c 400)
   pending_sum[$tgt]="$sum"
   ts=$(stat -c %Y "$f" 2>/dev/null || echo "$now")
   pending_age[$tgt]=$(( now - ts ))
@@ -56,11 +57,17 @@ for s in "${sessions[@]}"; do
   proj=$(esc "${s#claude-}")
   if [ -n "${pending_file[$s]:-}" ]; then
     age="${pending_age[$s]:-0}"
-    sum=$(esc "$(trim "${pending_sum[$s]:-waiting}" 180)")
-    # Two-line row: title on top, full command on line 2 (real newline in
-    # the string — rofi treats SOH as row-separator so \n is safe inside).
+    raw="${pending_sum[$s]:-waiting}"
+    # Hard-cap for really pathological cases (multi-line commands, huge one-
+    # liners); still generous enough to fit most real actions.
+    raw=$(trim "$raw" 320)
+    # Word-wrap at ~92 chars so long commands span up to ~4 lines inside
+    # the row instead of getting truncated at the panel edge with a "…".
+    # Escape pango AFTER folding so wrap columns line up with visible chars.
+    wrapped=$(printf '%s' "$raw" | fold -s -w 92)
+    wrapped=$(esc "$wrapped")
     row=$(printf '⏸  <b>%s</b>  <span alpha="55%%" size="small">(%ds)</span>\n<span size="small" alpha="80%%">%s</span>' \
-      "$proj" "$age" "$sum")
+      "$proj" "$age" "$wrapped")
     rows_meta+=("$s|1")
   else
     row=$(printf '✓  <b>%s</b>  <span alpha="55%%" size="small">idle</span>' "$proj")
@@ -76,7 +83,7 @@ theme='
 window {
     location:         east;
     anchor:           east;
-    width:            640px;
+    width:            820px;
     height:           100%;
     padding:          20px;
     border:           0;
@@ -165,7 +172,7 @@ chosen=$(printf '%s\x01' "${rows_display[@]}" | rofi \
   -dmenu -i \
   -sep $'\x01' \
   -no-config \
-  -eh 2 \
+  -eh 5 \
   -p "Claude" \
   -mesg "$mesg" \
   -markup-rows \
