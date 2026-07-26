@@ -45,14 +45,17 @@ tmux_target="claude-${project}"
 capture_summary() {
   local target="$1"
   tmux has-session -t "$target" 2>/dev/null || return 0
-  # Small delay: the prompt sometimes isn't fully rendered when the hook fires.
-  sleep 0.3
-  local pane
-  pane=$(tmux capture-pane -p -J -t "$target" -S -200 2>/dev/null || true)
-  [ -z "$pane" ] && return 0
 
-  local end top
-  end=$(printf '%s' "$pane" | grep -n 'Do you want to proceed' | tail -1 | cut -d: -f1)
+  # The Notification hook fires BEFORE Claude finishes rendering the prompt
+  # in the pane — a fixed sleep is a race. Poll for the "Do you want to
+  # proceed" line up to ~3s, capturing after each short delay.
+  local pane end top attempt
+  for attempt in 1 2 3 4 5 6; do
+    sleep 0.5
+    pane=$(tmux capture-pane -p -J -t "$target" -S -200 2>/dev/null || true)
+    end=$(printf '%s' "$pane" | grep -n 'Do you want to proceed' | tail -1 | cut -d: -f1)
+    [ -n "$end" ] && break
+  done
   [ -z "$end" ] && return 0
 
   # Top = last line that is essentially a horizontal rule (5+ ─ chars, maybe

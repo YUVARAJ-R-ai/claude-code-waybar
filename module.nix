@@ -69,6 +69,18 @@ in {
     # Hyprland keybinds — appended to existing extraConfig by HM's module merge.
     wayland.windowManager.hyprland.extraConfig = builtins.readFile ./hypr/keybinds.conf;
 
+    # Kitty: Shift+Enter should INSERT a newline in Claude Code's prompt.
+    # By default kitty sends CR for both Enter and Shift+Enter, so Claude can't
+    # distinguish them and both submit. This is exactly what Claude Code's own
+    # /terminal-setup command writes into kitty.conf. Only applied if the user
+    # actually uses home-manager's kitty module; otherwise the merge is a no-op.
+    programs.kitty.extraConfig = lib.mkIf (config.programs.kitty.enable or false) ''
+
+      # === claude-waybar: Shift+Enter → newline (instead of submit) ===
+      map shift+enter send_text all \x1b\r
+      map ctrl+enter  send_text all \x1b\r
+    '';
+
     # Install hook scripts at stable ~/.config paths so settings.json never needs
     # updates when the flake's store path changes.
     xdg.configFile."claude-waybar/hooks/notification.sh" = {
