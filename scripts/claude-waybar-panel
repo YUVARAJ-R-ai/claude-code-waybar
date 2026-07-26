@@ -59,93 +59,97 @@ for s in "${sessions[@]}"; do
 done
 menu="${menu%$'\n'}"
 
-prompt="Claude sessions  (⏎ · Alt-a accept · Alt-r reject · Alt-g focus · Alt-k kill)"
-
-# Full theme-str override so the panel doesn't inherit the user's rofi theme's
-# widths, wallpaper background, or split layout. Otherwise `location: east`
-# just floats a narrow list on top of the base theme and rows get truncated.
+# Self-contained theme, no user-config inheritance (`-no-config`). Literal
+# hex values (no @vars) — we hit rendering weirdness when the theme leaned
+# on user-defined variables cross-widget.
 theme='
-* {
-    bg-outer:  #1e2033ee;
-    bg-card:   #2a2d43cc;
-    bg-select: #3a3f5ccc;
-    fg:        #cdd6f4;
-    fg-mute:   #a6adc8;
-    accent:    #89b4fa;
-    background-color: transparent;
-    text-color:       @fg;
-}
 window {
-    location: east;
-    anchor:   east;
-    width:    720px;
-    height:   100%;
-    padding:  20px;
-    border:   0;
-    border-radius: 0;
-    background-color: @bg-outer;
-    background-image: url("", none);
+    location:         east;
+    anchor:           east;
+    width:            720px;
+    height:           100%;
+    padding:          20px;
+    border:           0;
+    border-radius:    0;
+    background-color: #1e2033ee;
+    children:         [ mainbox ];
 }
 mainbox {
-    children: [ inputbar, listview ];
-    spacing:  14px;
-    padding:  0;
     background-color: transparent;
+    spacing:          14px;
+    padding:          0;
+    children:         [ inputbar, message, listview ];
 }
 inputbar {
-    children:      [ prompt, entry ];
-    spacing:       10px;
-    padding:       14px 16px;
-    background-color: @bg-card;
-    border:        1px solid;
-    border-color:  @accent;
-    border-radius: 12px;
-    text-color:    @fg;
+    background-color: #2a2d43;
+    text-color:       #cdd6f4;
+    padding:          12px 14px;
+    border:           1px solid;
+    border-color:     #89b4fa;
+    border-radius:    10px;
+    spacing:          8px;
+    children:         [ prompt, entry ];
 }
 prompt {
-    text-color:       @accent;
     background-color: transparent;
+    text-color:       #89b4fa;
 }
 entry {
-    text-color:       @fg;
     background-color: transparent;
-    placeholder:      "type to filter…";
-    placeholder-color: @fg-mute;
+    text-color:       #cdd6f4;
+    placeholder:      "filter…";
+    placeholder-color: #a6adc8;
 }
-listview {
-    lines:        14;
-    fixed-height: false;
-    scrollbar:    false;
-    spacing:      8px;
-    padding:      0;
-    background-color: transparent;
+message {
+    background-color: #2a2d4380;
+    text-color:       #a6adc8;
+    padding:          8px 12px;
+    border-radius:    8px;
 }
-element {
-    padding:          14px 16px;
-    spacing:          8px;
-    border:           1px solid;
-    border-color:     @bg-select;
-    border-radius:    12px;
-    background-color: @bg-card;
-    text-color:       @fg;
-}
-element selected {
-    background-color: @bg-select;
-    border-color:     @accent;
-    text-color:       @accent;
-}
-element-text {
-    horizontal-align: 0;
-    vertical-align:   0.5;
+textbox {
     background-color: transparent;
     text-color:       inherit;
 }
+listview {
+    background-color: transparent;
+    lines:            10;
+    fixed-height:     false;
+    scrollbar:        false;
+    spacing:          8px;
+    padding:          0;
+}
+element {
+    background-color: #2a2d43cc;
+    text-color:       #cdd6f4;
+    padding:          14px 16px;
+    border:           1px solid;
+    border-color:     #3a3f5c;
+    border-radius:    10px;
+    spacing:          8px;
+    orientation:      horizontal;
+}
+element selected {
+    background-color: #3a3f5c;
+    text-color:       #89b4fa;
+    border-color:     #89b4fa;
+}
+element-text {
+    background-color: transparent;
+    text-color:       inherit;
+    horizontal-align: 0;
+    vertical-align:   0.5;
+}
 '
+
+mesg="⏎ accept/focus · <b>Alt-a</b> accept · <b>Alt-r</b> reject · <b>Alt-g</b> go · <b>Alt-k</b> kill"
 
 set +e
 chosen=$(printf '%s' "$menu" | rofi \
   -dmenu -i \
-  -p "$prompt" \
+  -no-config \
+  -p "Claude" \
+  -mesg "$mesg" \
+  -markup-rows \
   -theme-str "$theme" \
   -kb-custom-1 "Alt+a" \
   -kb-custom-2 "Alt+r" \
