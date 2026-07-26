@@ -47,12 +47,11 @@ declare -a rows_meta
 for s in "${sessions[@]}"; do
   proj="${s#claude-}"
   if [ -n "${pending_file[$s]:-}" ]; then
-    msg="${pending_msg[$s]:-Waiting…}"
     age="${pending_age[$s]:-0}"
-    row=$(printf '⏸  %-24s — %s  (%ds)' "$proj" "$msg" "$age")
+    row=$(printf '⏸  %s  ·  waiting %ds' "$proj" "$age")
     rows_meta+=("$s|1")
   else
-    row=$(printf '✓  %-24s — running, no pending' "$proj")
+    row=$(printf '✓  %s  ·  idle' "$proj")
     rows_meta+=("$s|0")
   fi
   menu+="$row"$'\n'
@@ -66,7 +65,7 @@ theme='
 window {
     location:         east;
     anchor:           east;
-    width:            720px;
+    width:            480px;
     height:           100%;
     padding:          20px;
     border:           0;
@@ -141,7 +140,7 @@ element-text {
 }
 '
 
-mesg="⏎ accept/focus · <b>Alt-a</b> accept · <b>Alt-r</b> reject · <b>Alt-g</b> go · <b>Alt-k</b> kill"
+mesg="<b>⏎</b> act · <b>alt-a</b> accept · <b>alt-r</b> reject · <b>alt-g</b> go · <b>alt-k</b> kill"
 
 set +e
 chosen=$(printf '%s' "$menu" | rofi \
